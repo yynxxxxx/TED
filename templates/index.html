@@ -377,10 +377,9 @@
                 const response = await fetch('/random_bg');
                 const result = await response.json();
                 
-                if (result.success && result.filename) {
-                    const imageUrl = `/bg/${result.filename}`;
+                if (result.success && result.image_url) {
                     // 直接设置背景图片
-                    document.body.style.backgroundImage = `linear-gradient(rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3)), url('${imageUrl}')`;
+                    document.body.style.backgroundImage = `linear-gradient(rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3)), url('${result.image_url}')`;
                     document.body.classList.add('bg-loaded');
                 } else {
                     console.log('获取随机背景失败，使用默认背景');

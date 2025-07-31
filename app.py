@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, send_from_directory
+from flask import Flask, render_template, request, jsonify, session
 import requests
 import hashlib
 import re
@@ -8,7 +8,6 @@ import string
 import time
 import warnings
 import os
-import glob
 
 # 禁用SSL警告
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -246,38 +245,35 @@ def logout():
 def random_bg():
     """获取随机背景图片"""
     try:
-        bg_folder = os.path.join(os.path.dirname(__file__), 'bg')
-        if not os.path.exists(bg_folder):
-            return jsonify({'success': False, 'message': 'bg文件夹不存在'})
+        # 获取public文件夹中的图片文件
+        public_folder = os.path.join(os.path.dirname(__file__), 'public')
+        
+        if not os.path.exists(public_folder):
+            return jsonify({'success': False, 'message': 'public文件夹不存在'})
         
         # 支持的图片格式
-        image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.gif', '*.bmp', '*.webp']
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
         image_files = []
         
-        for ext in image_extensions:
-            image_files.extend(glob.glob(os.path.join(bg_folder, ext)))
-            image_files.extend(glob.glob(os.path.join(bg_folder, ext.upper())))
+        # 遍历public文件夹找图片文件
+        for filename in os.listdir(public_folder):
+            if any(filename.lower().endswith(ext) for ext in image_extensions):
+                image_files.append(filename)
         
         if not image_files:
-            return jsonify({'success': False, 'message': 'bg文件夹中没有找到图片文件'})
+            return jsonify({'success': False, 'message': 'public文件夹中没有找到图片文件'})
         
         # 随机选择一张图片
         selected_image = random.choice(image_files)
-        filename = os.path.basename(selected_image)
+        image_url = f'/public/{selected_image}'
         
-        return jsonify({'success': True, 'filename': filename})
+        return jsonify({'success': True, 'image_url': image_url})
         
     except Exception as e:
         return jsonify({'success': False, 'message': f'获取背景图片异常: {str(e)}'})
 
-@app.route('/bg/<filename>')
-def serve_bg_image(filename):
-    """提供背景图片文件"""
-    try:
-        bg_folder = os.path.join(os.path.dirname(__file__), 'bg')
-        return send_from_directory(bg_folder, filename)
-    except Exception as e:
-        return jsonify({'error': f'图片加载失败: {str(e)}'}), 404
+# Vercel需要这个变量
+app_instance = app
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
