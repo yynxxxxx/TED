@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>爱语吧VIP充值助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-image 0.5s ease-in-out;
+        }
+        
+        body.bg-loaded {
+            background: linear-gradient(rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3)), url('') center/cover no-repeat fixed;
+        }
+        
+        .container {
+            background: transparent;
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+        }
+        
+        .title {
+            color: #ffffff;
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .form-group label {
+            display: block;
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 15px;
+            background: transparent;
+            backdrop-filter: blur(1px);
+            -webkit-backdrop-filter: blur(1px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            font-size: 16px;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            transition: all 0.3s;
+        }
+        
+        .form-group input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(102, 126, 234, 0.3);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.05);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+            background: transparent;
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        
+        .btn-primary {
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            background: rgba(102, 126, 234, 0.1);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.2);
+        }
+        
+        .btn-success {
+            border-color: rgba(76, 175, 80, 0.5);
+        }
+        
+        .btn-success:hover {
+            transform: translateY(-2px);
+            background: rgba(76, 175, 80, 0.1);
+            box-shadow: 0 10px 20px rgba(76, 175, 80, 0.2);
+        }
+        
+        .btn-danger {
+            border-color: rgba(244, 67, 54, 0.5);
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            background: rgba(244, 67, 54, 0.1);
+            box-shadow: 0 10px 20px rgba(244, 67, 54, 0.2);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .message.success {
+            background: rgba(212, 237, 218, 0.3);
+            color: #ffffff;
+            border: 1px solid rgba(195, 230, 203, 0.5);
+        }
+        
+        .message.error {
+            background: rgba(248, 215, 218, 0.3);
+            color: #ffffff;
+            border: 1px solid rgba(245, 198, 203, 0.5);
+        }
+        
+        .message.info {
+            background: rgba(209, 236, 241, 0.3);
+            color: #ffffff;
+            border: 1px solid rgba(190, 229, 235, 0.5);
+        }
+        
+        .login-section, .recharge-section {
+            display: none;
+            background: transparent;
+            backdrop-filter: blur(1px);
+            -webkit-backdrop-filter: blur(1px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+        
+        .login-section.active, .recharge-section.active {
+            display: block;
+        }
+        
+        .user-info {
+            background: transparent;
+            backdrop-filter: blur(1px);
+            -webkit-backdrop-filter: blur(1px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: left;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .progress-container {
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        
+        .datetime-display {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: transparent;
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 15px 20px;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 1000;
+        }
+        
+        .datetime-display .date {
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        .datetime-display .time {
+            font-size: 18px;
+            color: #4CAF50;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        
+        .runtime-display {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: transparent;
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 15px 20px;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 1000;
+            text-align: center;
+        }
+        
+        .runtime-display .runtime-title {
+            font-size: 12px;
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+        
+        .runtime-display .runtime-days {
+            font-size: 16px;
+            color: #FF9800;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            line-height: 1.4;
+        }
+        
+
+    </style>
+</head>
+<body>
+    <!-- 日期时间显示 -->
+    <div id="datetimeDisplay" class="datetime-display">
+        <div class="date" id="currentDate">2024年1月1日 星期一</div>
+        <div class="time" id="currentTime">00:00:00</div>
+    </div>
+    
+    <!-- 网站运行天数显示 -->
+    <div id="runtimeDisplay" class="runtime-display">
+        <div class="runtime-title">🌟 网站已运行</div>
+        <div class="runtime-days" id="runtimeDays">0天 0时 0分</div>
+    </div>
+    
+    <div class="container">
+        <h1 class="title">🌟 爱语吧VIP充值助手</h1>
+        
+        <!-- 消息显示区域 -->
+        <div id="message" class="message" style="display: none;"></div>
+        
+        <!-- 登录区域 -->
+        <div id="loginSection" class="login-section active">
+            <div class="form-group">
+                <label for="username">📱 手机号</label>
+                <input type="text" id="username" placeholder="请输入手机号">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">🔒 密码</label>
+                <input type="text" id="password" placeholder="请输入密码">
+            </div>
+            
+            <button id="loginBtn" class="btn btn-primary" onclick="login()">
+                🚀 立即登录
+            </button>
+        </div>
+        
+        <!-- 充值区域 -->
+        <div id="rechargeSection" class="recharge-section">
+            <div class="user-info">
+                <strong>👤 已登录用户</strong><br>
+                <span id="userInfo"></span>
+            </div>
+            
+            <div class="form-group">
+                <label for="months">⏰ 充值月数</label>
+                <input type="number" id="months" min="1" max="120" value="1" placeholder="请输入充值月数">
+            </div>
+            
+            <button id="rechargeBtn" class="btn btn-success" onclick="recharge()">
+                💰 开始充值
+            </button>
+            
+            <button class="btn btn-danger" onclick="logout()">
+                🚪 退出登录
+            </button>
+            
+            <!-- 进度条 -->
+            <div id="progressContainer" class="progress-container">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <div id="progressText" class="progress-text">准备中...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 加载随机背景图片
+        async function loadRandomBackground() {
+            try {
+                const response = await fetch('/random_bg');
+                const result = await response.json();
+                
+                if (result.success && result.filename) {
+                    const imageUrl = `/bg/${result.filename}`;
+                    // 直接设置背景图片
+                    document.body.style.backgroundImage = `linear-gradient(rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3)), url('${imageUrl}')`;
+                    document.body.classList.add('bg-loaded');
+                } else {
+                    console.log('获取随机背景失败，使用默认背景');
+                }
+            } catch (error) {
+                console.log('加载背景图片异常:', error);
+            }
+        }
+        
+        // 更新日期时间
+        function updateDateTime() {
+            const now = new Date();
+            const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            
+            // 格式化日期
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+            const day = now.getDate();
+            const weekday = weekdays[now.getDay()];
+            const dateStr = `${year}年${month}月${day}日 ${weekday}`;
+            
+            // 格式化时间
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const timeStr = `${hours}:${minutes}:${seconds}`;
+            
+            // 更新页面显示
+            document.getElementById('currentDate').textContent = dateStr;
+            document.getElementById('currentTime').textContent = timeStr;
+        }
+        
+        // 计算网站运行时间
+        function updateRuntimeDays() {
+            // 设定网站启动日期：2024年1月1日 00:00:00
+            const startDate = new Date('2024-01-01 00:00:00');
+            
+            // 计算运行时间
+            const now = new Date();
+            const timeDiff = now.getTime() - startDate.getTime();
+            
+            // 计算天数、小时、分钟
+            const days = Math.floor(timeDiff / (1000 * 3600 * 24));
+            const hours = Math.floor((timeDiff % (1000 * 3600 * 24)) / (1000 * 3600));
+            const minutes = Math.floor((timeDiff % (1000 * 3600)) / (1000 * 60));
+            
+            // 更新显示
+            document.getElementById('runtimeDays').textContent = `${days}天 ${hours}时 ${minutes}分`;
+        }
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadRandomBackground();
+            updateDateTime();
+            updateRuntimeDays();
+            // 每秒更新一次时间
+            setInterval(updateDateTime, 1000);
+            // 每分钟更新一次运行时间
+            setInterval(updateRuntimeDays, 60 * 1000);
+        });
+        
+        // 显示消息
+        function showMessage(text, type = 'info') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            
+            // 3秒后自动隐藏
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 3000);
+        }
+        
+        // 登录功能
+        async function login() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const loginBtn = document.getElementById('loginBtn');
+            
+            if (!username || !password) {
+                showMessage('请输入手机号和密码', 'error');
+                return;
+            }
+            
+            // 显示加载状态
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="loading"></span>登录中...';
+            
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    
+                    // 显示用户信息
+                    document.getElementById('userInfo').textContent = 
+                        `手机号: ${username} \n UID: ${result.uid}`;
+                    
+                    // 切换到充值界面
+                    document.getElementById('loginSection').classList.remove('active');
+                    document.getElementById('rechargeSection').classList.add('active');
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('网络错误，请稍后重试', 'error');
+            } finally {
+                // 恢复按钮状态
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '🚀 立即登录';
+            }
+        }
+        
+        // 充值功能
+        async function recharge() {
+            const months = document.getElementById('months').value;
+            const rechargeBtn = document.getElementById('rechargeBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            
+            if (!months || months < 1) {
+                showMessage('请输入有效的充值月数', 'error');
+                return;
+            }
+            
+            // 显示加载状态
+            rechargeBtn.disabled = true;
+            rechargeBtn.innerHTML = '<span class="loading"></span>充值中...';
+            progressContainer.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressText.textContent = '准备开始充值...';
+            
+            try {
+                // 第一步：开始充值，获取总请求数
+                const startResponse = await fetch('/start_recharge', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        months: parseInt(months)
+                    })
+                });
+                
+                const startResult = await startResponse.json();
+                
+                if (!startResult.success) {
+                    showMessage(startResult.message, 'error');
+                    progressContainer.style.display = 'none';
+                    rechargeBtn.disabled = false;
+                    rechargeBtn.innerHTML = '💰 开始充值';
+                    return;
+                }
+                
+                const totalRequests = startResult.total_requests;
+                progressText.textContent = `开始充值 ${months} 个月，共需发送 ${totalRequests} 次请求`;
+                
+                // 第二步：逐个发送充值请求
+                let currentRequest = 0;
+                let successfulRequests = 0;
+                let latestVipEndTime = null;
+                
+                const sendSingleRequest = async () => {
+                    try {
+                        const singleResponse = await fetch('/recharge_single', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            }
+                        });
+                        
+                        const singleResult = await singleResponse.json();
+                        
+                        if (singleResult.success) {
+                            currentRequest = singleResult.current;
+                            successfulRequests = singleResult.successful;
+                            
+                            if (singleResult.vip_end_time) {
+                                latestVipEndTime = singleResult.vip_end_time;
+                            }
+                            
+                            // 更新进度条
+                            const progress = (currentRequest / totalRequests) * 100;
+                            progressFill.style.width = progress + '%';
+                            
+                            // 更新进度文本
+                            progressText.innerHTML = `${singleResult.message}<br>进度: ${currentRequest}/${totalRequests} (${Math.round(progress)}%)`;
+                            
+                            // 如果未完成，继续下一个请求
+                            if (!singleResult.is_completed) {
+                                setTimeout(sendSingleRequest, 200); // 200ms间隔
+                            } else {
+                                // 充值完成
+                                let finalText = `✅ 充值完成！成功: ${successfulRequests}/${totalRequests}`;
+                                if (latestVipEndTime) {
+                                    finalText += `<br>📅 VIP到期时间: ${latestVipEndTime}`;
+                                }
+                                progressText.innerHTML = finalText;
+                                showMessage(`充值完成！成功率: ${successfulRequests}/${totalRequests}`, 'success');
+                                
+                                // 恢复按钮状态
+                                rechargeBtn.disabled = false;
+                                rechargeBtn.innerHTML = '💰 开始充值';
+                            }
+                        } else {
+                            showMessage(singleResult.message, 'error');
+                            rechargeBtn.disabled = false;
+                            rechargeBtn.innerHTML = '💰 开始充值';
+                        }
+                    } catch (error) {
+                        showMessage('网络错误，请稍后重试', 'error');
+                        rechargeBtn.disabled = false;
+                        rechargeBtn.innerHTML = '💰 开始充值';
+                    }
+                };
+                
+                // 开始第一个请求
+                setTimeout(sendSingleRequest, 500);
+                
+            } catch (error) {
+                showMessage('网络错误，请稍后重试', 'error');
+                progressContainer.style.display = 'none';
+                rechargeBtn.disabled = false;
+                rechargeBtn.innerHTML = '💰 开始充值';
+            }
+        }
+        
+        // 退出登录
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(result.message, 'info');
+                    
+                    // 切换回登录界面
+                    document.getElementById('rechargeSection').classList.remove('active');
+                    document.getElementById('loginSection').classList.add('active');
+                    
+                    // 清空表单
+                    document.getElementById('username').value = '';
+                    document.getElementById('password').value = '';
+                    document.getElementById('progressContainer').style.display = 'none';
+                }
+            } catch (error) {
+                showMessage('退出登录失败', 'error');
+            }
+        }
+        
+        // 回车键登录
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('username').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    login();
+                }
+            });
+            
+            document.getElementById('password').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    login();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
