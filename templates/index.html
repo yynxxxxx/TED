@@ -318,7 +318,7 @@
     </div>
     
     <div class="container">
-        <h1 class="title">🌟 爱语吧VIP充值助手</h1>
+        <h1 class="title">⚡ 爱语吧VIP高速充值助手</h1>
         
         <!-- 消息显示区域 -->
         <div id="message" class="message" style="display: none;"></div>
@@ -352,8 +352,10 @@
                 <input type="number" id="months" min="1" max="120" value="1" placeholder="请输入充值月数">
             </div>
             
-            <button id="rechargeBtn" class="btn btn-success" onclick="recharge()">
-                💰 开始充值
+            
+            
+            <button id="rechargeBtn" class="btn btn-success" onclick="rechargeAsync()">
+                🚀 开始充值
             </button>
             
             <button class="btn btn-danger" onclick="logout()">
@@ -505,8 +507,8 @@
             }
         }
         
-        // 充值功能
-        async function recharge() {
+        // 异步充值功能
+        async function rechargeAsync() {
             const months = document.getElementById('months').value;
             const rechargeBtn = document.getElementById('rechargeBtn');
             const progressContainer = document.getElementById('progressContainer');
@@ -520,14 +522,14 @@
             
             // 显示加载状态
             rechargeBtn.disabled = true;
-            rechargeBtn.innerHTML = '<span class="loading"></span>充值中...';
+            rechargeBtn.innerHTML = '<span class="loading"></span>启动充值...';
             progressContainer.style.display = 'block';
             progressFill.style.width = '0%';
-            progressText.textContent = '准备开始充值...';
+            progressText.innerHTML = '正在启动高速充值...';
             
             try {
-                // 第一步：开始充值，获取总请求数
-                const startResponse = await fetch('/start_recharge', {
+                // 启动异步充值
+                const startResponse = await fetch('/recharge_async', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -543,82 +545,114 @@
                     showMessage(startResult.message, 'error');
                     progressContainer.style.display = 'none';
                     rechargeBtn.disabled = false;
-                    rechargeBtn.innerHTML = '💰 开始充值';
+                    rechargeBtn.innerHTML = '🚀 开始充值';
                     return;
                 }
                 
                 const totalRequests = startResult.total_requests;
-                progressText.textContent = `开始充值 ${months} 个月，共需发送 ${totalRequests} 次请求`;
+                const taskId = startResult.task_id;
+                const batchSizeUsed = 10;
                 
-                // 第二步：逐个发送充值请求
-                let currentRequest = 0;
-                let successfulRequests = 0;
-                let latestVipEndTime = null;
+                rechargeBtn.innerHTML = '<span class="loading"></span>高速充值中...';
+                progressText.innerHTML = `🚀 高速充值已启动！<br>总请求数: ${totalRequests}, 并发数: ${batchSizeUsed}<br>正在并发处理...`;
                 
-                const sendSingleRequest = async () => {
+                // 轮询充值状态
+                const pollStatus = async () => {
                     try {
-                        const singleResponse = await fetch('/recharge_single', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            }
-                        });
+                        const statusResponse = await fetch(`/recharge_status?task_id=${encodeURIComponent(taskId)}`);
+                        const statusResult = await statusResponse.json();
                         
-                        const singleResult = await singleResponse.json();
-                        
-                        if (singleResult.success) {
-                            currentRequest = singleResult.current;
-                            successfulRequests = singleResult.successful;
+                        if (statusResult.success && statusResult.result) {
+                            const result = statusResult.result;
                             
-                            if (singleResult.vip_end_time) {
-                                latestVipEndTime = singleResult.vip_end_time;
+                            if (result.error) {
+                                showMessage(`充值异常: ${result.error}`, 'error');
+                                progressText.innerHTML = `❌ 充值失败: ${result.error}`;
+                                rechargeBtn.disabled = false;
+                                rechargeBtn.innerHTML = '🚀 开始充值';
+                                return;
                             }
                             
-                            // 更新进度条
-                            const progress = (currentRequest / totalRequests) * 100;
-                            progressFill.style.width = progress + '%';
-                            
-                            // 更新进度文本
-                            progressText.innerHTML = `${singleResult.message}<br>进度: ${currentRequest}/${totalRequests} (${Math.round(progress)}%)`;
-                            
-                            // 如果未完成，继续下一个请求
-                            if (!singleResult.is_completed) {
-                                setTimeout(sendSingleRequest, 200); // 200ms间隔
-                            } else {
+                            if (result.completed) {
                                 // 充值完成
-                                let finalText = `✅ 充值完成！成功: ${successfulRequests}/${totalRequests}`;
-                                if (latestVipEndTime) {
-                                    finalText += `<br>📅 VIP到期时间: ${latestVipEndTime}`;
+                                const successRate = ((result.successful_requests / result.total_requests) * 100).toFixed(1);
+                                progressFill.style.width = '100%';
+                                
+                                let finalText = `✅ 高速充值完成！<br>成功: ${result.successful_requests}/${result.total_requests} (${successRate}%)`;
+                                
+                                // 显示重试信息
+                                if (result.retry_count > 0) {
+                                    finalText += `<br>🔄 重试次数: ${result.retry_count}`;
                                 }
+                                
+                                // 显示失败信息
+                                if (result.failed_requests > 0) {
+                                    finalText += `<br>❌ 最终失败: ${result.failed_requests}次`;
+                                }
+                                
+                                // 显示VIP到期时间
+                                if (result.latest_vip_end_time) {
+                                    finalText += `<br>📅 VIP到期时间: ${result.latest_vip_end_time}`;
+                                }
+                                if (result.target_datetime) {
+                                    finalText += `<br>🎯 目标到期时间: ${result.target_datetime}`;
+                                }
+                                
                                 progressText.innerHTML = finalText;
-                                showMessage(`充值完成！成功率: ${successfulRequests}/${totalRequests}`, 'success');
+                                
+                                // 根据目标完成情况显示不同的消息
+                                const targetRequests = result.target_requests || result.total_requests;
+                                if (result.successful_requests >= targetRequests) {
+                                    showMessage(`🎉 充值目标完美达成！成功${result.successful_requests}次，达到目标月数！`, 'success');
+                                } else if (result.successful_requests >= targetRequests * 0.9) {
+                                    showMessage(`✅ 充值基本达成目标！成功率: ${((result.successful_requests / targetRequests) * 100).toFixed(1)}%`, 'success');
+                                } else {
+                                    showMessage(`⚠️ 充值未完全达成目标，成功${result.successful_requests}次，目标${targetRequests}次`, 'error');
+                                }
                                 
                                 // 恢复按钮状态
                                 rechargeBtn.disabled = false;
-                                rechargeBtn.innerHTML = '💰 开始充值';
+                                rechargeBtn.innerHTML = '🚀 开始充值';
+                            } else {
+                                // 充值进行中，显示实时进度
+                                const completedRequests = result.completed_requests || 0;
+                                const successfulRequests = result.successful_requests || 0;
+                                const progressPercent = result.progress_percent || 0;
+                                
+                                progressFill.style.width = progressPercent + '%';
+                                progressText.innerHTML = `🚀 高速充值进行中...<br>` +
+                                    `📊 实时进度: ${completedRequests}/${result.total_requests} (${Math.round(progressPercent)}%)<br>` +
+                                    `✅ 成功次数: ${successfulRequests}次<br>` +
+                                    `⚡ 并发数: ${batchSizeUsed} | ⏱️ 超时: 3秒`;
+                                
+                                // 继续轮询
+                                setTimeout(pollStatus, 500); // 更频繁的轮询以显示实时进度
                             }
                         } else {
-                            showMessage(singleResult.message, 'error');
-                            rechargeBtn.disabled = false;
-                            rechargeBtn.innerHTML = '💰 开始充值';
+                            // 继续轮询
+                            setTimeout(pollStatus, 1000);
                         }
                     } catch (error) {
-                        showMessage('网络错误，请稍后重试', 'error');
-                        rechargeBtn.disabled = false;
-                        rechargeBtn.innerHTML = '💰 开始充值';
+                        console.error('轮询状态异常:', error);
+                        setTimeout(pollStatus, 2000);
                     }
                 };
                 
-                // 开始第一个请求
-                setTimeout(sendSingleRequest, 500);
+                // 记录开始时间用于进度估算
+                const startTime = Date.now();
+                
+                // 开始轮询状态
+                setTimeout(pollStatus, 1000);
                 
             } catch (error) {
                 showMessage('网络错误，请稍后重试', 'error');
                 progressContainer.style.display = 'none';
                 rechargeBtn.disabled = false;
-                rechargeBtn.innerHTML = '💰 开始充值';
+                rechargeBtn.innerHTML = '🚀 开始充值';
             }
         }
+        
+
         
         // 退出登录
         async function logout() {

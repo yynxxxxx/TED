@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, send_from_directory
 import requests
 import hashlib
 import re
@@ -8,12 +8,26 @@ import string
 import time
 import warnings
 import os
+import asyncio
+import aiohttp
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+import calendar
+import math
 
 # 禁用SSL警告
 warnings.filterwarnings("ignore", category=UserWarning)
 
 app = Flask(__name__)
 app.secret_key = 'iyuba_vip_helper_secret_key_2024'
+
+# 全局任务进度存储，避免在后台线程写 session
+# 结构: { task_id: { total_requests, successful_requests, failed_requests,
+#                    completed_requests, latest_vip_end_time, retry_count,
+#                    completed, started, progress_percent } }
+progress_store = {}
+progress_store_lock = threading.Lock()
 
 def get_md5(text):
     """将输入转换为MD5"""
@@ -68,8 +82,8 @@ def send_iyuba_request(username, password_md5, sign=""):
     except requests.exceptions.RequestException:
         return None
 
-def send_vip_request_simple(uid):
-    """发送VIP充值请求"""
+async def send_vip_request_async(session, uid, request_id):
+    """异步发送VIP充值请求，3秒超时"""
     url = "https://apps.iyuba.cn/iyuba/openVipApplet.jsp"
     random_wxid = generate_random_wxid()
     
@@ -90,15 +104,145 @@ def send_vip_request_simple(uid):
     }
     
     try:
-        response = requests.get(url, params=params, headers=headers, verify=False)
-        return response
-    except requests.exceptions.RequestException:
-        return None
+        # 设置3秒超时
+        timeout = aiohttp.ClientTimeout(total=3)
+        async with session.get(url, params=params, headers=headers, ssl=False, timeout=timeout) as response:
+            response_text = await response.text()
+            return {
+                'request_id': request_id,
+                'status_code': response.status,
+                'response_text': response_text,
+                'success': response.status == 200
+            }
+    except asyncio.TimeoutError:
+        return {
+            'request_id': request_id,
+            'status_code': None,
+            'response_text': None,
+            'success': False,
+            'error': '请求超时(3秒)'
+        }
+    except Exception as e:
+        return {
+            'request_id': request_id,
+            'status_code': None,
+            'response_text': None,
+            'success': False,
+            'error': str(e)
+        }
+
+def add_months(base_dt: datetime, months: int) -> datetime:
+    """在日历意义上为日期增加月份，保持日对齐；若目标月无此日，则取该月最后一天。"""
+    year = base_dt.year + (base_dt.month - 1 + months) // 12
+    month = (base_dt.month - 1 + months) % 12 + 1
+    day = base_dt.day
+    last_day = calendar.monthrange(year, month)[1]
+    day = min(day, last_day)
+    return base_dt.replace(year=year, month=month, day=day)
+
+async def batch_vip_requests(uid, total_requests, batch_size=10, max_retries=3, progress_callback=None):
+    """批量异步发送VIP充值请求，每批10个，等待本批完全处理完（包括重试）后再进行下一批"""
+    successful_requests = 0
+    latest_vip_end_time = None
+    processed_batches = 0  # 已处理完成的批次数
+    retry_count = 0
+    
+    def update_progress():
+        """更新进度"""
+        if progress_callback:
+            # completed_requests = 已完成批次数 * 10 + 当前批次的进度
+            completed_requests = processed_batches * batch_size + min(batch_size, total_requests - processed_batches * batch_size) if processed_batches < (total_requests + batch_size - 1) // batch_size else total_requests
+            progress_callback(completed_requests, successful_requests, total_requests, latest_vip_end_time)
+    
+    # 创建SSL上下文，忽略证书验证
+    connector = aiohttp.TCPConnector(ssl=False)
+    timeout = aiohttp.ClientTimeout(total=30)
+    
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+        # 按批次处理，每批10个请求
+        batch_size = 10  # 固定并发为10
+        
+        for batch_start in range(0, total_requests, batch_size):
+            batch_end = min(batch_start + batch_size, total_requests)
+            current_batch_size = batch_end - batch_start
+            
+            print(f"开始处理第 {batch_start//batch_size + 1} 批，共 {current_batch_size} 个请求")
+            
+            # 当前批次需要成功的请求数
+            batch_successful = 0
+            batch_attempts = 0
+            
+            # 对当前批次进行重试，直到全部成功或达到最大重试次数
+            while batch_successful < current_batch_size and batch_attempts <= max_retries:
+                batch_attempts += 1
+                if batch_attempts > 1:
+                    retry_count += 1
+                    print(f"第 {batch_start//batch_size + 1} 批进行第 {batch_attempts-1} 次重试")
+                
+                # 需要发送的请求数 = 当前批次大小 - 已成功数
+                need_requests = current_batch_size - batch_successful
+                batch_tasks = []
+                
+                # 创建当前需要的任务
+                for j in range(need_requests):
+                    task = send_vip_request_async(session, uid, batch_start + j + 1)
+                    batch_tasks.append(task)
+                
+                # 并发执行当前批次
+                batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                
+                # 处理批次结果
+                batch_current_success = 0
+                for result in batch_results:
+                    if isinstance(result, dict):
+                        if result.get('success') and result.get('status_code') == 200:
+                            try:
+                                response_data = json.loads(result.get('response_text', '{}'))
+                                if response_data.get('result') == 200:
+                                    batch_current_success += 1
+                                    successful_requests += 1
+                                    # 记录最新的VIP到期时间
+                                    if 'vipEndTime' in response_data:
+                                        latest_vip_end_time = response_data['vipEndTime']
+                            except json.JSONDecodeError:
+                                pass
+                
+                batch_successful += batch_current_success
+                print(f"第 {batch_start//batch_size + 1} 批第 {batch_attempts} 次尝试：成功 {batch_current_success}/{need_requests}，累计成功 {batch_successful}/{current_batch_size}")
+                
+                # 如果本批次未全部成功且还可以重试，稍作延迟
+                if batch_successful < current_batch_size and batch_attempts <= max_retries:
+                    await asyncio.sleep(0.5)
+            
+            print(f"第 {batch_start//batch_size + 1} 批处理完成：最终成功 {batch_successful}/{current_batch_size}")
+            
+            # 批次完成，更新已处理批次数
+            processed_batches += 1
+            update_progress()
+            
+            # 批次间稍作延迟
+            if batch_end < total_requests:
+                await asyncio.sleep(0.3)
+    
+    failed_requests = total_requests - successful_requests
+    
+    return {
+        'successful_requests': successful_requests,
+        'failed_requests': failed_requests,
+        'total_requests': total_requests,
+        'latest_vip_end_time': latest_vip_end_time,
+        'retry_count': retry_count
+    }
 
 @app.route('/')
 def index():
     """主页"""
     return render_template('index.html')
+
+@app.route('/public/<filename>')
+def serve_public_file(filename):
+    """提供public文件夹中的静态文件"""
+    return send_from_directory('public', filename)
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -142,9 +286,9 @@ def login():
     except Exception as e:
         return jsonify({'success': False, 'message': f'登录异常: {str(e)}'})
 
-@app.route('/start_recharge', methods=['POST'])
-def start_recharge():
-    """开始充值，返回总数"""
+@app.route('/recharge_async', methods=['POST'])
+def recharge_async():
+    """异步批量充值"""
     if 'uid' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
@@ -156,84 +300,138 @@ def start_recharge():
     except (ValueError, TypeError):
         return jsonify({'success': False, 'message': '请输入有效的数字'})
     
-    total_requests = months * 10
+    uid = session['uid']
+    # 计算按自然月份精确的目标到期日
+    now_dt = datetime.now()
+    target_dt = add_months(now_dt, months)
+
+    # 目标到期日为目标日期当天的00:00之后。为了确保至少覆盖到目标当天，把目标对齐到目标日的23:59:59
+    target_dt = target_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    # 每个请求充值3天 => 按天数精确换算需要的请求次数
+    delta_days = (target_dt.date() - now_dt.date()).days
+    # 确保非负
+    delta_days = max(delta_days, 0)
+    total_requests = math.ceil(delta_days / 3) if delta_days > 0 else 0
+    # 至少也要发一次请，否则0个月会有0；但这里months>=1才会进来
+    total_requests = max(total_requests, months * 10)  # 与旧规则兼容的下限
+
+    batch_size = 10  # 固定并发为10
+
+    # 为本次任务生成 task_id，前端用它轮询状态
+    task_id = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(16))
     
-    # 保存到session
-    session['total_requests'] = total_requests
-    session['current_request'] = 0
-    session['successful_requests'] = 0
-    session['latest_vip_end_time'] = None
+    def run_async_recharge():
+        """在新线程中运行异步充值"""
+        try:
+            # 创建新的事件循环
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # 进度回调函数（写入全局进度存储）
+            def progress_callback(completed, successful, total, vip_time):
+                with progress_store_lock:
+                    task = progress_store.get(task_id)
+                    if task is None:
+                        return
+                    task['completed_requests'] = completed
+                    task['successful_requests'] = successful
+                    task['latest_vip_end_time'] = vip_time
+                    task['progress_percent'] = (completed / total * 100) if total > 0 else 0
+            
+            # 执行异步充值
+            result = loop.run_until_complete(batch_vip_requests(uid, total_requests, batch_size, max_retries=3, progress_callback=progress_callback))
+            
+            # 如果失败请求过多，尝试额外补充请求以达到目标月数
+            target_successful = total_requests
+            if result['failed_requests'] > 0 and result['successful_requests'] < target_successful:
+                # 计算需要补充的请求数
+                additional_needed = target_successful - result['successful_requests']
+                if additional_needed > 0:
+                    print(f"需要补充{additional_needed}个请求以达到目标")
+                    
+                    # 执行补充请求
+                    additional_result = loop.run_until_complete(
+                        batch_vip_requests(uid, additional_needed, min(batch_size, 5), max_retries=2)
+                    )
+                    
+                    # 合并结果
+                    result['successful_requests'] += additional_result['successful_requests']
+                    result['failed_requests'] += additional_result['failed_requests'] 
+                    result['total_requests'] += additional_result['total_requests']
+                    result['retry_count'] += additional_result['retry_count']
+                    if additional_result['latest_vip_end_time']:
+                        result['latest_vip_end_time'] = additional_result['latest_vip_end_time']
+            
+            # 保存结果到全局任务存储
+            with progress_store_lock:
+                progress_store[task_id].update({
+                    'total_requests': result['total_requests'],
+                    'successful_requests': result['successful_requests'],
+                    'failed_requests': result['failed_requests'],
+                    'latest_vip_end_time': result['latest_vip_end_time'],
+                    'retry_count': result['retry_count'],
+                    'completed': True,
+                    'target_requests': target_successful,
+                    'target_datetime': target_dt.strftime('%Y-%m-%d %H:%M:%S')
+                })
+            
+            loop.close()
+            
+        except Exception as e:
+            with progress_store_lock:
+                progress_store[task_id].update({
+                    'error': str(e),
+                    'completed': True
+                })
+    
+    # 初始化任务进度（存入全局存储）
+    with progress_store_lock:
+        progress_store[task_id] = {
+            'total_requests': total_requests,
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'completed_requests': 0,
+            'progress_percent': 0,
+            'latest_vip_end_time': None,
+            'retry_count': 0,
+            'completed': False,
+            'started': True
+        }
+    
+    # 在后台线程中执行异步充值
+    thread = threading.Thread(target=run_async_recharge)
+    thread.daemon = True
+    thread.start()
     
     return jsonify({
         'success': True,
+        'message': f'开始异步充值 {months} 个月，共 {total_requests} 次请求',
         'total_requests': total_requests,
-        'months': months
+        'batch_size': batch_size,
+        'task_id': task_id
     })
 
-@app.route('/recharge_single', methods=['POST'])
-def recharge_single():
-    """执行单次充值请求"""
+@app.route('/recharge_status', methods=['GET'])
+def recharge_status():
+    """获取异步充值状态（通过task_id读取全局存储）"""
     if 'uid' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
-    
-    if 'total_requests' not in session:
-        return jsonify({'success': False, 'message': '请先开始充值'})
-    
-    uid = session['uid']
-    current_request = session.get('current_request', 0)
-    total_requests = session.get('total_requests', 0)
-    successful_requests = session.get('successful_requests', 0)
-    
-    if current_request >= total_requests:
-        return jsonify({'success': False, 'message': '充值已完成'})
-    
-    try:
-        response = send_vip_request_simple(uid)
-        current_request += 1
-        session['current_request'] = current_request
-        
-        success = False
-        vip_end_time = None
-        message = ""
-        
-        if response and response.status_code == 200:
-            try:
-                response_data = response.json()
-                if response_data.get('result') == 200:
-                    success = True
-                    successful_requests += 1
-                    session['successful_requests'] = successful_requests
-                    
-                    # 记录最新的VIP到期时间
-                    if 'vipEndTime' in response_data:
-                        vip_end_time = response_data['vipEndTime']
-                        session['latest_vip_end_time'] = vip_end_time
-                    
-                    message = f"充值成功 ({successful_requests}/{total_requests})"
-                    if vip_end_time:
-                        message += f" | 到期时间: {vip_end_time}"
-                else:
-                    message = f"充值失败 ({current_request}/{total_requests}) | {response_data.get('msg', '未知错误')}"
-            except json.JSONDecodeError:
-                message = f"响应解析错误 ({current_request}/{total_requests})"
-        else:
-            message = f"请求失败 ({current_request}/{total_requests}) | 状态码: {response.status_code if response else 'None'}"
-        
-        is_completed = current_request >= total_requests
-        
-        return jsonify({
-            'success': True,
-            'request_success': success,
-            'message': message,
-            'current': current_request,
-            'total': total_requests,
-            'successful': successful_requests,
-            'is_completed': is_completed,
-            'vip_end_time': vip_end_time or session.get('latest_vip_end_time')
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'请求异常: {str(e)}'})
+
+    task_id = request.args.get('task_id', '').strip()
+    if not task_id:
+        return jsonify({'success': False, 'message': '缺少task_id'})
+
+    with progress_store_lock:
+        result = progress_store.get(task_id)
+
+    if not result:
+        return jsonify({'success': False, 'message': '无此任务或任务已过期'})
+
+    return jsonify({
+        'success': True,
+        'result': result
+    })
 
 @app.route('/logout', methods=['POST'])
 def logout():
